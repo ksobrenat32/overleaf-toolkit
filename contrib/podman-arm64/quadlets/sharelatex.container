@@ -1,0 +1,29 @@
+[Unit]
+Description=Overleaf sharelatex (ARM64)
+After=overleaf-mongo.service overleaf-redis.service
+Requires=overleaf-mongo.service overleaf-redis.service sharelatex-data-volume.service
+
+[Container]
+Image=@OVERLEAF_IMAGE_TAG@
+ContainerName=sharelatex
+Volume=sharelatex-data.volume:@IN_CONTAINER_DATA_PATH@:rw
+Network=overleaf.network
+PublishPort=@OVERLEAF_LISTEN_IP@:@OVERLEAF_PORT@:80
+Environment=GIT_BRIDGE_ENABLED=false
+Environment=GIT_BRIDGE_HOST=git-bridge
+Environment=GIT_BRIDGE_PORT=8000
+Environment=REDIS_HOST=redis
+Environment=REDIS_PORT=6379
+Environment=V1_HISTORY_URL=http://sharelatex:3100/api
+Environment=@MONGO_ENV_VAR@=@MONGO_URL@
+Environment=@REDIS_ENV_VAR@=@REDIS_HOST@
+EnvironmentFile=@ENV_FILE@
+NoNewPrivileges=true
+StopGracePeriod=60
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

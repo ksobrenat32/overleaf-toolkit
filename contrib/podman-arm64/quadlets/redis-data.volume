@@ -1,0 +1,7 @@
+[Unit]
+Description=Overleaf redis data (bind-mount of REDIS_DATA_PATH)
+
+[Volume]
+Device=@REDIS_DATA_PATH@
+Type=bind
+Options=rw

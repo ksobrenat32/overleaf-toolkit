@@ -1,0 +1,23 @@
+[Unit]
+Description=Mongo for Overleaf (ARM64)
+
+[Container]
+Image=@MONGO_IMAGE_FULL@
+ContainerName=mongo
+Volume=mongo-data.volume:/data/db
+Network=overleaf.network
+Environment=MONGO_ARGS=--replSet overleaf
+HealthCmd=sh -c 'echo db.stats().ok | mongosh localhost:27017/test --quiet'
+HealthInterval=10s
+HealthTimeout=10s
+HealthRetries=5
+HealthStartPeriod=30s
+AutoUpdate=registry
+NoNewPrivileges=true
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

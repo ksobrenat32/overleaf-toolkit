@@ -1,0 +1,7 @@
+[Unit]
+Description=Overleaf mongo data (bind-mount of MONGO_DATA_PATH)
+
+[Volume]
+Device=@MONGO_DATA_PATH@
+Type=bind
+Options=rw

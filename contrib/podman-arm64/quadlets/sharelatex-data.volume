@@ -1,0 +1,7 @@
+[Unit]
+Description=Overleaf sharelatex data (bind-mount of OVERLEAF_DATA_PATH)
+
+[Volume]
+Device=@OVERLEAF_DATA_PATH@
+Type=bind
+Options=rw
