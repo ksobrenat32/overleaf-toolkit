@@ -23,11 +23,10 @@
 # Usage:
 #   build-sharelatex-image.sh
 #   build-sharelatex-image.sh --full-texlive
-#   build-sharelatex-image.sh --full-texlive --symlink-from=2024 --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz
+#   build-sharelatex-image.sh --full-texlive --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz
 #
 # Environment / build-arg equivalents:
 #   BUILD_FULL_TEXLIVE=true        same as --full-texlive
-#   TEXLIVE_SYMLINK_FROM=2024      year the base image expects (see Containerfile.fulltex)
 #   TEXLIVE_MIRROR_URL=...         mirror URL for install-tl-unx.tar.gz
 
 set -euo pipefail
@@ -57,7 +56,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --full-texlive)      BUILD_FULL_TEXLIVE=true ;;
     --no-full-texlive)   BUILD_FULL_TEXLIVE=false ;;
-    --symlink-from=*)    TEXLIVE_SYMLINK_FROM="${1#*=}" ;;
     --mirror-url=*)      TEXLIVE_MIRROR_URL="${1#*=}" ;;
     -h|--help)
       sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//'
@@ -152,10 +150,6 @@ if [[ "$BUILD_FULL_TEXLIVE" == "true" ]]; then
 
   echo "==> Building $FULLTEX_TAG with full TeX Live (this will take a long time — ~7 GB of TeX packages)"
   FULLTEX_BUILD_ARGS=(--build-arg "BASE_IMAGE=${IMAGE_TAG}")
-  if [[ -n "${TEXLIVE_SYMLINK_FROM:-}" ]]; then
-    FULLTEX_BUILD_ARGS+=(--build-arg "TEXLIVE_SYMLINK_FROM=${TEXLIVE_SYMLINK_FROM}")
-    echo "    TEXLIVE_SYMLINK_FROM=$TEXLIVE_SYMLINK_FROM"
-  fi
   if [[ -n "${TEXLIVE_MIRROR_URL:-}" ]]; then
     FULLTEX_BUILD_ARGS+=(--build-arg "TEXLIVE_MIRROR_URL=${TEXLIVE_MIRROR_URL}")
     echo "    TEXLIVE_MIRROR_URL=$TEXLIVE_MIRROR_URL"

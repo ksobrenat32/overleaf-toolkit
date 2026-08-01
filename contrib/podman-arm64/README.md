@@ -163,33 +163,24 @@ OVERLEAF_FULL_TEXLIVE=false  # always use base image, even if -fulltex exists
 
 ### Build args
 
-The fulltex build accepts these flags:
+The fulltex build accepts this flag:
 
-| Flag / env                 | Meaning                                                                 |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `--symlink-from=YYYY`      | Year the base image hardcodes at `/usr/local/texlive/YYYY`. The overlay symlinks the freshly installed texlive to this path so the image picks it up. Leave empty when the install year matches what the image already expects. |
-| `--mirror-url=URL`         | Mirror for `install-tl-unx.tar.gz`. Default: official CTAN. Use a closer mirror to speed up the download. |
+| Flag / env           | Meaning                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `--mirror-url=URL`   | Mirror for `install-tl-unx.tar.gz`. Default: official CTAN. Use a closer mirror to speed up the download. |
 
-#### Common symlink-from values
-
-| Upstream image major           | `TEXLIVE_SYMLINK_FROM` |
-| ------------------------------ | ---------------------- |
-| 5.0.x – 6.1.x                  | `2023`                 |
-| 6.2.x                          | `2024`                 |
-
-If unsure, check the Dockerfile in the version of
-[github.com/overleaf/overleaf](https://github.com/overleaf/overleaf) that
-matches your `config/version`.
+The overlay installs the **current year's** TeX Live into
+`/usr/local/texlive/<current-year>` and does not symlink or alias it.
+The base image is expected to pick up whichever year the build happened
+to run in.
 
 ### Example
 
 ```sh
-# Re-build both images after upgrading to 6.2.x with the full texlive,
-# using a private CTAN mirror and the 2024 symlink trick:
+# Build both images with the full texlive, using a private CTAN mirror:
 contrib/podman-arm64/bin/build-sharelatex-image.sh \
     --full-texlive \
-    --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz \
-    --symlink-from=2024
+    --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz
 
 # Re-render the quadlets to pick the new -fulltex tag:
 contrib/podman-arm64/bin/install-quadlets.sh

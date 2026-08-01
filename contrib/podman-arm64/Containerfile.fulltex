@@ -1,6 +1,9 @@
 # Containerfile.fulltex — extends the ARM64 base image with the full
 # TeX Live distribution. The base image ships with a curated subset; this
-# overlay installs *every* package via the official TeX Live installer.
+# overlay installs *every* package via the official TeX Live installer
+# into /usr/local/texlive/<current-year> (whatever year the build runs in)
+# and does not symlink or alias it. The image is expected to find the
+# latest texlive year on its own.
 #
 # Build args (all optional, override with --build-arg NAME=value):
 #
@@ -13,27 +16,10 @@
 #       Set this to a closer mirror (e.g. https://mirror.clientvps.com/CTAN/...)
 #       to speed up downloads.
 #
-#   TEXLIVE_SYMLINK_FROM
-#       Year that the *base* image expects at /usr/local/texlive/<year>.
-#       The freshly installed TeX Live creates /usr/local/texlive/<current-year>
-#       (whatever year you happen to be running the installer in). Set this to
-#       the year your base image hardcodes so the symlink makes the new install
-#       visible to it. Leave empty for no symlink (use this when the current
-#       install year already matches what the image expects).
-#
-# Known good values per upstream image major:
-#
-#   Overleaf CE/Server Pro 5.0.x–6.1.x: TEXLIVE_SYMLINK_FROM=2023
-#   Overleaf CE/Server Pro 6.2.x:        TEXLIVE_SYMLINK_FROM=2024
-#
-# Check the image's Dockerfile in github.com/overleaf/overleaf if unsure —
-# the symlink target is whatever year the upstream Dockerfile pinned.
-#
 # Example:
 #
 #   podman build \
 #     --build-arg BASE_IMAGE=sharelatex/sharelatex:6.2.2-arm64 \
-#     --build-arg TEXLIVE_SYMLINK_FROM=2024 \
 #     --build-arg TEXLIVE_MIRROR_URL=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz \
 #     -f Containerfile.fulltex \
 #     -t sharelatex/sharelatex:6.2.2-arm64-fulltex \
@@ -48,7 +34,8 @@ USER root
 
 # Run the official TeX Live installer. --no-interaction selects the full
 # scheme (every package, ~7 GB). The build cache will only re-run this layer
-# when TEXLIVE_MIRROR_URL changes.
+# when TEXLIVE_MIRROR_URL changes. The installer creates
+# /usr/local/texlive/<current-year> and the image is expected to pick it up.
 ARG TEXLIVE_MIRROR_URL
 RUN set -eux \
     && cd /tmp \
@@ -59,19 +46,3 @@ RUN set -eux \
     && perl install-tl --no-interaction \
     && cd / \
     && rm -rf /tmp/install-tl-*
-
-# Optional symlink: when TEXLIVE_SYMLINK_FROM is set, alias
-# /usr/local/texlive/${TEXLIVE_SYMLINK_FROM} to the year the installer just
-# created (the most recent YYYY directory under /usr/local/texlive).
-ARG TEXLIVE_SYMLINK_FROM=
-RUN set -eux; \
-    if [ -n "${TEXLIVE_SYMLINK_FROM}" ]; then \
-        INSTALLED_YEAR=$(ls -1 /usr/local/texlive | grep -E '^[0-9]{4}$' | sort -n | tail -n 1); \
-        if [ -z "${INSTALLED_YEAR}" ]; then \
-            echo "ERROR: no /usr/local/texlive/<year> directory was created by the installer." >&2; \
-            exit 1; \
-        fi; \
-        echo "Symlinking /usr/local/texlive/${TEXLIVE_SYMLINK_FROM} -> /usr/local/texlive/${INSTALLED_YEAR}"; \
-        rm -rf "/usr/local/texlive/${TEXLIVE_SYMLINK_FROM}"; \
-        ln -sf "/usr/local/texlive/${INSTALLED_YEAR}" "/usr/local/texlive/${TEXLIVE_SYMLINK_FROM}"; \
-    fi
