@@ -152,14 +152,27 @@ fi
 echo "    HEAD: $(git -C "$OVERLEAF_BUILD_DIR" rev-parse --short HEAD) ($CHECKED_OUT_REF)"
 
 echo "==> Building $IMAGE_TAG (this will take a while — TeX Live base image is large)"
+# The overleaf/overleaf tree has two Dockerfiles:
+#   server-ce/Dockerfile-base  → builds sharelatex/sharelatex-base (TeX Live + Node)
+#   server-ce/Dockerfile       → builds sharelatex/sharelatex (the web service)
+# sharelatex/sharelatex-base on Docker Hub is amd64-only, so we must build
+# the base ourselves for ARM64 first, then point the main build at our local
+# base via the OVERLEAF_BASE_TAG build arg.
+BASE_TAG="sharelatex/sharelatex-base:${IMAGE_VERSION}-arm64"
+
+podman build \
+  --platform=linux/arm64 \
+  --tag "$BASE_TAG" \
+  -f "$OVERLEAF_BUILD_DIR/server-ce/Dockerfile-base" \
+  "$OVERLEAF_BUILD_DIR"
+
 # BuildKit is the default in modern podman; --platform forces ARM64 even on
-# x86 hosts (with qemu) so the resulting image is portable. The Dockerfile
-# lives at server-ce/Dockerfile in the overleaf/overleaf source tree — there
-# is no Dockerfile at the repo root.
+# x86 hosts (with qemu) so the resulting image is portable.
 podman build \
   --platform=linux/arm64 \
   --tag "$IMAGE_TAG" \
   --pull=newer \
+  --build-arg "OVERLEAF_BASE_TAG=${BASE_TAG}" \
   -f "$OVERLEAF_BUILD_DIR/server-ce/Dockerfile" \
   "$OVERLEAF_BUILD_DIR"
 
