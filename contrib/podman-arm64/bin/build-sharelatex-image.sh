@@ -153,11 +153,14 @@ echo "    HEAD: $(git -C "$OVERLEAF_BUILD_DIR" rev-parse --short HEAD) ($CHECKED
 
 echo "==> Building $IMAGE_TAG (this will take a while — TeX Live base image is large)"
 # BuildKit is the default in modern podman; --platform forces ARM64 even on
-# x86 hosts (with qemu) so the resulting image is portable.
+# x86 hosts (with qemu) so the resulting image is portable. The Dockerfile
+# lives at server-ce/Dockerfile in the overleaf/overleaf source tree — there
+# is no Dockerfile at the repo root.
 podman build \
   --platform=linux/arm64 \
   --tag "$IMAGE_TAG" \
   --pull=newer \
+  -f "$OVERLEAF_BUILD_DIR/server-ce/Dockerfile" \
   "$OVERLEAF_BUILD_DIR"
 
 #### Optional fulltex overlay ####
