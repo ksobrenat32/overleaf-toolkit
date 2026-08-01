@@ -124,13 +124,32 @@ if ! git -C "$OVERLEAF_BUILD_DIR" fetch --tags --quiet; then
   echo "WARNING: failed to fetch tags (offline?). Will rely on local tags only." >&2
 fi
 
-if ! git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/$IMAGE_VERSION" 2>/dev/null; then
-  if ! git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/v$IMAGE_VERSION" 2>/dev/null; then
-    echo "ERROR: tag '$IMAGE_VERSION' (or 'v$IMAGE_VERSION') not found in overleaf/overleaf." >&2
-    echo "  Check that config/version matches an upstream release." >&2
+if git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/$IMAGE_VERSION" 2>/dev/null; then
+  CHECKED_OUT_REF="tag $IMAGE_VERSION"
+elif git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/v$IMAGE_VERSION" 2>/dev/null; then
+  CHECKED_OUT_REF="tag v$IMAGE_VERSION"
+else
+  # Modern Overleaf CE releases are not tagged in github.com/overleaf/overleaf —
+  # only a handful of historic releases are. Fall back to the default branch
+  # (origin/HEAD, or "main") so the build still produces an image; the result
+  # may not match config/version exactly.
+  DEFAULT_BRANCH="$(git -C "$OVERLEAF_BUILD_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+  if [[ -z "$DEFAULT_BRANCH" ]]; then
+    DEFAULT_BRANCH="main"
+  fi
+
+  if ! git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "$DEFAULT_BRANCH" 2>/dev/null; then
+    echo "ERROR: tag '$IMAGE_VERSION' (or 'v$IMAGE_VERSION') not found in overleaf/overleaf," >&2
+    echo "  and could not check out default branch '$DEFAULT_BRANCH' either." >&2
     exit 1
   fi
+
+  echo "WARNING: tag '$IMAGE_VERSION' (or 'v$IMAGE_VERSION') is not published on github.com/overleaf/overleaf;" >&2
+  echo "  falling back to default branch '$DEFAULT_BRANCH'. The resulting image may not match config/version exactly." >&2
+  CHECKED_OUT_REF="branch $DEFAULT_BRANCH"
 fi
+
+echo "    HEAD: $(git -C "$OVERLEAF_BUILD_DIR" rev-parse --short HEAD) ($CHECKED_OUT_REF)"
 
 echo "==> Building $IMAGE_TAG (this will take a while — TeX Live base image is large)"
 # BuildKit is the default in modern podman; --platform forces ARM64 even on
