@@ -4,7 +4,7 @@ Description=Overleaf sharelatex (ARM64)
 [Container]
 Image=@OVERLEAF_IMAGE_TAG@
 ContainerName=sharelatex
-Volume=overleaf-sharelatex-data.volume:@IN_CONTAINER_DATA_PATH@:rw
+Volume=overleaf-sharelatex-data.volume:@IN_CONTAINER_DATA_PATH@:rw,U
 Network=overleaf.network
 PublishPort=@PUBLISH_PORT_SPEC@
 Environment=GIT_BRIDGE_ENABLED=false

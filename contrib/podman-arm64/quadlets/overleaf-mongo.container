@@ -4,7 +4,7 @@ Description=Mongo for Overleaf (ARM64)
 [Container]
 Image=@MONGO_IMAGE_FULL@
 ContainerName=mongo
-Volume=overleaf-mongo-data.volume:/data/db
+Volume=overleaf-mongo-data.volume:/data/db:rw,U
 Network=overleaf.network
 Exec=mongod --replSet overleaf
 AutoUpdate=registry

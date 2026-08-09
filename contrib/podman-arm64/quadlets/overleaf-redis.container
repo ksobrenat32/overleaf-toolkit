@@ -4,7 +4,7 @@ Description=Redis for Overleaf (ARM64)
 [Container]
 Image=@REDIS_IMAGE_FULL@
 ContainerName=redis
-Volume=overleaf-redis-data.volume:/data
+Volume=overleaf-redis-data.volume:/data:rw,U
 Network=overleaf.network
 Exec=@REDIS_COMMAND@
 AutoUpdate=registry
