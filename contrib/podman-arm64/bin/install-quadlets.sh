@@ -58,10 +58,12 @@ MONGO_DATA_PATH=$(cd "$TOOLKIT_ROOT" && realpath "$MONGO_DATA_PATH")
 REDIS_DATA_PATH=$(cd "$TOOLKIT_ROOT" && realpath "$REDIS_DATA_PATH")
 
 # OVERLEAF_LISTEN_IP defaults to 0.0.0.0 if unset (matches the toolkit).
-if [[ -z "${OVERLEAF_LISTEN_IP:-}" ]]; then
-  OVERLEAF_LISTEN_IP="0.0.0.0"
-fi
 OVERLEAF_PORT="${OVERLEAF_PORT:-80}"
+if [[ -z "${OVERLEAF_LISTEN_IP:-}" ]] || [[ "$OVERLEAF_LISTEN_IP" == "0.0.0.0" ]]; then
+  PUBLISH_PORT_SPEC="${OVERLEAF_PORT}:80"
+else
+  PUBLISH_PORT_SPEC="${OVERLEAF_LISTEN_IP}:${OVERLEAF_PORT}:80"
+fi
 
 # Mongo image reference (split like the toolkit does).
 MONGO_IMAGE_NAME=$(read_configuration MONGO_IMAGE)
@@ -114,7 +116,7 @@ fi
 #   - OVERLEAF_FULL_TEXLIVE=false in env or config  → always use the base
 #   - unset                                           → auto-detect: -fulltex if present, else base
 OVERLEAF_FULL_TEXLIVE_OVERRIDE=$(read_configuration OVERLEAF_FULL_TEXLIVE || true)
-BASE_TAG="sharelatex/sharelatex:${IMAGE_VERSION}-arm64"
+BASE_TAG="${OVERLEAF_IMAGE_REGISTRY:-}sharelatex/sharelatex:${IMAGE_VERSION}-arm64"
 FULLTEX_TAG="${BASE_TAG}-fulltex"
 
 case "${OVERLEAF_FULL_TEXLIVE_OVERRIDE:-auto}" in
@@ -156,6 +158,7 @@ for tmpl in "$QUADLET_SRC_DIR"/*; do
     -e "s|@REDIS_DATA_PATH@|$REDIS_DATA_PATH|g" \
     -e "s|@OVERLEAF_LISTEN_IP@|$OVERLEAF_LISTEN_IP|g" \
     -e "s|@OVERLEAF_PORT@|$OVERLEAF_PORT|g" \
+    -e "s|@PUBLISH_PORT_SPEC@|$PUBLISH_PORT_SPEC|g" \
     -e "s|@OVERLEAF_IMAGE_TAG@|$OVERLEAF_IMAGE_TAG|g" \
     -e "s|@MONGO_IMAGE_FULL@|$MONGO_IMAGE_FULL|g" \
     -e "s|@REDIS_IMAGE_FULL@|$REDIS_IMAGE_FULL|g" \
@@ -184,7 +187,7 @@ systemctl --user daemon-reload
 
 echo
 echo "==> Installed. Available units:"
-systemctl --user list-unit-files 'overleaf-*' 'sharelatex-*' 'mongo-*' 'redis-*' 2>/dev/null \
+systemctl --user list-unit-files 'overleaf*' 2>/dev/null \
   | sed 's/^/    /'
 echo
 echo "Next steps:"

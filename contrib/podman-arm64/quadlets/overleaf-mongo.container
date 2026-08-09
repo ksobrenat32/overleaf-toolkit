@@ -4,14 +4,9 @@ Description=Mongo for Overleaf (ARM64)
 [Container]
 Image=@MONGO_IMAGE_FULL@
 ContainerName=mongo
-Volume=mongo-data.volume:/data/db
+Volume=overleaf-mongo-data.volume:/data/db
 Network=overleaf.network
-Environment=MONGO_ARGS=--replSet overleaf
-HealthCmd=sh -c 'echo db.stats().ok | mongosh localhost:27017/test --quiet'
-HealthInterval=10s
-HealthTimeout=10s
-HealthRetries=5
-HealthStartPeriod=30s
+Exec=mongod --replSet overleaf
 AutoUpdate=registry
 NoNewPrivileges=true
 

@@ -73,8 +73,14 @@ bin/init
 # 2. edit config/overleaf.rc as usual — set OVERLEAF_LISTEN_IP,
 #    OVERLEAF_DATA_PATH, MONGO_DATA_PATH, REDIS_DATA_PATH, etc.
 
-# 3. build the Overleaf image natively for ARM64
+# 3. build the Overleaf image natively for ARM64 (from the main branch)
 contrib/podman-arm64/bin/build-sharelatex-image.sh
+
+#    On a VPS with limited RAM (≤4 GB), use --low-memory:
+#    contrib/podman-arm64/bin/build-sharelatex-image.sh --low-memory
+
+#    To build a specific git ref instead of main:
+#    contrib/podman-arm64/bin/build-sharelatex-image.sh --ref=<branch|tag|commit>
 
 #    Want the full TeX Live distribution (every package, ~7 GB)?
 #    Append --full-texlive. See "Full TeX Live overlay" below.
@@ -128,7 +134,7 @@ bin/upgrade
 
 # 2. rebuild the ARM64 image at the new tag
 contrib/podman-arm64/bin/build-sharelatex-image.sh
-#    add --full-texlive if you used it before
+#    add --full-texlive if you used it before (and --low-memory on VPS)
 
 # 3. restart
 systemctl --user restart overleaf-sharelatex.service
@@ -161,13 +167,14 @@ OVERLEAF_FULL_TEXLIVE=false  # always use base image, even if -fulltex exists
 # unset                      # auto-detect (default)
 ```
 
-### Build args
-
-The fulltex build accepts this flag:
+### Build flags
 
 | Flag / env           | Meaning                                                                 |
 | -------------------- | ----------------------------------------------------------------------- |
-| `--mirror-url=URL`   | Mirror for `install-tl-unx.tar.gz`. Default: official CTAN. Use a closer mirror to speed up the download. |
+| `--full-texlive`     | Build the `-fulltex` overlay image after the base image.                |
+| `--mirror-url=URL`   | TeX Live mirror URL. Passed as `TEXLIVE_MIRROR` to the base build and `TEXLIVE_MIRROR_URL` to the fulltex overlay. Use a closer mirror to speed up the download. |
+| `--low-memory`       | Caps each build container at 4 GB RAM (`--memory=4g`) and sets `NODE_OPTIONS=--max-old-space-size=2048`. Use on VPS instances with ≤4 GB RAM. |
+| `--ref=<ref>`        | Git ref to build from. Default: `main`. Use a specific commit hash, branch name, or tag for reproducible builds. |
 
 The overlay installs the **current year's** TeX Live into
 `/usr/local/texlive/<current-year>` and does not symlink or alias it.
@@ -177,9 +184,11 @@ to run in.
 ### Example
 
 ```sh
-# Build both images with the full texlive, using a private CTAN mirror:
+# Build both images with the full texlive, a closer CTAN mirror, and
+# resource limits suitable for a VPS with limited RAM:
 contrib/podman-arm64/bin/build-sharelatex-image.sh \
     --full-texlive \
+    --low-memory \
     --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz
 
 # Re-render the quadlets to pick the new -fulltex tag:

@@ -4,35 +4,32 @@
 # Build the sharelatex/sharelatex image natively for ARM64 from source,
 # optionally extending it with the full TeX Live distribution.
 #
-# - For Community Edition (SERVER_PRO=false) it clones
-#   https://github.com/overleaf/overleaf at the tag matching config/version
-#   and runs `podman build --platform=linux/arm64`.
-# - For Server Pro it stops here — the source is in a private repo that you
-#   must clone yourself (see the message printed below).
-#
-# The base image is tagged:
+# By default this builds from the main branch of overleaf/overleaf and tags
+# the result with the version from config/version:
 #   sharelatex/sharelatex:${IMAGE_VERSION}-arm64
+#   sharelatex/sharelatex:${IMAGE_VERSION}-arm64-fulltex   (with --full-texlive)
 #
-# When --full-texlive is set, an additional overlay (Containerfile.fulltex)
-# is built on top and tagged:
-#   sharelatex/sharelatex:${IMAGE_VERSION}-arm64-fulltex
-#
-# install-quadlets.sh picks the -fulltex tag automatically when it exists
-# locally, otherwise falls back to the base.
+# The overleaf/overleaf repo does not have per-release git tags, so the tag
+# on the resulting image is for your local tracking — it matches whatever
+# config/version says, not a git tag in the source repo.
 #
 # Usage:
 #   build-sharelatex-image.sh
-#   build-sharelatex-image.sh --full-texlive
+#   build-sharelatex-image.sh --full-texlive --low-memory
+#   build-sharelatex-image.sh --ref=main                 # explicit ref (the default)
+#   build-sharelatex-image.sh --ref=abc1234              # specific commit
 #   build-sharelatex-image.sh --full-texlive --mirror-url=https://mirror.clientvps.com/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz
 #
-# Environment / build-arg equivalents:
-#   BUILD_FULL_TEXLIVE=true        same as --full-texlive
-#   TEXLIVE_MIRROR_URL=...         mirror URL for install-tl-unx.tar.gz
+# Flags / env vars:
+#   BUILD_FULL_TEXLIVE=true        --full-texlive
+#   BUILD_LOW_MEMORY=true          --low-memory        (reduces NODE_OPTIONS + podman memory)
+#   BUILD_REF=ref                  --ref=ref           (git ref to build; default: main)
+#   TEXLIVE_MIRROR_URL=...         --mirror-url=URL    (mirror for fulltex overlay)
+#   FORCE_ARM64_BUILD=true                             (allow cross-build on non-ARM64)
 
 set -euo pipefail
 
 #### Detect Toolkit Project Root ####
-# if realpath is not available, create a semi-equivalent function
 command -v realpath >/dev/null 2>&1 || realpath() {
   [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
@@ -52,10 +49,15 @@ FULLTEX_CONTEXT_DIR="$TOOLKIT_ROOT/contrib/podman-arm64"
 
 #### Parse flags ####
 BUILD_FULL_TEXLIVE="${BUILD_FULL_TEXLIVE:-false}"
+BUILD_LOW_MEMORY="${BUILD_LOW_MEMORY:-false}"
+BUILD_REF="${BUILD_REF:-main}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --full-texlive)      BUILD_FULL_TEXLIVE=true ;;
     --no-full-texlive)   BUILD_FULL_TEXLIVE=false ;;
+    --low-memory)        BUILD_LOW_MEMORY=true ;;
+    --no-low-memory)     BUILD_LOW_MEMORY=false ;;
+    --ref=*)             BUILD_REF="${1#*=}" ;;
     --mirror-url=*)      TEXLIVE_MIRROR_URL="${1#*=}" ;;
     -h|--help)
       sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \{0,1\}//'
@@ -86,14 +88,18 @@ fi
 read_image_version
 read_config
 
-IMAGE_TAG="sharelatex/sharelatex:${IMAGE_VERSION}-arm64"
+IMAGE_TAG="${OVERLEAF_IMAGE_REGISTRY:-}sharelatex/sharelatex:${IMAGE_VERSION}-arm64"
 FULLTEX_TAG="${IMAGE_TAG}-fulltex"
 
 echo "==> Image version : $IMAGE_VERSION"
 echo "==> Server Pro    : $SERVER_PRO"
+echo "==> Source ref    : $BUILD_REF"
 echo "==> Target tag    : $IMAGE_TAG"
 if [[ "$BUILD_FULL_TEXLIVE" == "true" ]]; then
   echo "==> Full TeX Live : $FULLTEX_TAG"
+fi
+if [[ "$BUILD_LOW_MEMORY" == "true" ]]; then
+  echo "==> Low memory    : yes (podman will cap memory + NODE_OPTIONS=--max-old-space-size=2048)"
 fi
 
 #### Server Pro: bail out (private repo) ####
@@ -103,7 +109,7 @@ Server Pro source is private. To build the Server Pro image:
 
   1. Clone the Server Pro repo into:
        $OVERLEAF_BUILD_DIR
-     at the tag/commit matching config/version ($IMAGE_VERSION).
+     at the commit matching config/version ($IMAGE_VERSION).
   2. Re-run this script — it will detect the existing clone and build from it.
 
 This script will NOT try to fetch the private repo on your behalf.
@@ -111,69 +117,59 @@ EOF
   exit 1
 fi
 
-#### Community Edition: clone + build ####
+#### Community Edition: clone + checkout ####
 if [[ ! -d "$OVERLEAF_BUILD_DIR/.git" ]]; then
   echo "==> Cloning https://github.com/overleaf/overleaf into $OVERLEAF_BUILD_DIR"
   mkdir -p "$(dirname "$OVERLEAF_BUILD_DIR")"
   git clone https://github.com/overleaf/overleaf.git "$OVERLEAF_BUILD_DIR"
 fi
 
-echo "==> Checking out tag $IMAGE_VERSION"
-# tags in overleaf/overleaf are like "v6.2.2" — try with and without the "v" prefix
-if ! git -C "$OVERLEAF_BUILD_DIR" fetch --tags --quiet; then
-  echo "WARNING: failed to fetch tags (offline?). Will rely on local tags only." >&2
+echo "==> Fetching latest from origin"
+git -C "$OVERLEAF_BUILD_DIR" fetch origin --quiet
+
+echo "==> Checking out ref '$BUILD_REF'"
+if ! git -C "$OVERLEAF_BUILD_DIR" checkout --quiet --force "$BUILD_REF" 2>/dev/null; then
+  echo "ERROR: ref '$BUILD_REF' not found in overleaf/overleaf." >&2
+  echo "  Check that the ref is a valid branch, tag, or commit hash." >&2
+  exit 1
 fi
 
-if git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/$IMAGE_VERSION" 2>/dev/null; then
-  CHECKED_OUT_REF="tag $IMAGE_VERSION"
-elif git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "tags/v$IMAGE_VERSION" 2>/dev/null; then
-  CHECKED_OUT_REF="tag v$IMAGE_VERSION"
-else
-  # Modern Overleaf CE releases are not tagged in github.com/overleaf/overleaf —
-  # only a handful of historic releases are. Fall back to the default branch
-  # (origin/HEAD, or "main") so the build still produces an image; the result
-  # may not match config/version exactly.
-  DEFAULT_BRANCH="$(git -C "$OVERLEAF_BUILD_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
-  if [[ -z "$DEFAULT_BRANCH" ]]; then
-    DEFAULT_BRANCH="main"
-  fi
+#### Build the base image first ####
+# The overleaf/overleaf repo uses a two-stage Docker build:
+#   1. server-ce/Dockerfile-base  →  sharelatex/sharelatex-base
+#   2. server-ce/Dockerfile       →  sharelatex/sharelatex (FROM the base)
+# Both use the monorepo root as the build context.
+BASE_TAG="${OVERLEAF_IMAGE_REGISTRY:-}sharelatex/sharelatex-base:${IMAGE_VERSION}-arm64"
+DOCKERFILE_BASE="$OVERLEAF_BUILD_DIR/server-ce/Dockerfile-base"
+DOCKERFILE_COMMUNITY="$OVERLEAF_BUILD_DIR/server-ce/Dockerfile"
 
-  if ! git -C "$OVERLEAF_BUILD_DIR" checkout --quiet "$DEFAULT_BRANCH" 2>/dev/null; then
-    echo "ERROR: tag '$IMAGE_VERSION' (or 'v$IMAGE_VERSION') not found in overleaf/overleaf," >&2
-    echo "  and could not check out default branch '$DEFAULT_BRANCH' either." >&2
-    exit 1
-  fi
-
-  echo "WARNING: tag '$IMAGE_VERSION' (or 'v$IMAGE_VERSION') is not published on github.com/overleaf/overleaf;" >&2
-  echo "  falling back to default branch '$DEFAULT_BRANCH'. The resulting image may not match config/version exactly." >&2
-  CHECKED_OUT_REF="branch $DEFAULT_BRANCH"
+PODMAN_COMMON_ARGS=(--platform=linux/arm64 --pull=newer)
+if [[ "$BUILD_LOW_MEMORY" == "true" ]]; then
+  PODMAN_COMMON_ARGS+=(--memory=4g)
+  export NODE_OPTIONS="--max-old-space-size=2048"
+fi
+if [[ -n "${TEXLIVE_MIRROR_URL:-}" ]]; then
+  PODMAN_COMMON_ARGS+=(--build-arg "TEXLIVE_MIRROR=${TEXLIVE_MIRROR_URL}")
+  echo "    TEXLIVE_MIRROR=$TEXLIVE_MIRROR_URL"
 fi
 
-echo "    HEAD: $(git -C "$OVERLEAF_BUILD_DIR" rev-parse --short HEAD) ($CHECKED_OUT_REF)"
-
-echo "==> Building $IMAGE_TAG (this will take a while — TeX Live base image is large)"
-# The overleaf/overleaf tree has two Dockerfiles:
-#   server-ce/Dockerfile-base  → builds sharelatex/sharelatex-base (TeX Live + Node)
-#   server-ce/Dockerfile       → builds sharelatex/sharelatex (the web service)
-# sharelatex/sharelatex-base on Docker Hub is amd64-only, so we must build
-# the base ourselves for ARM64 first, then point the main build at our local
-# base via the OVERLEAF_BASE_TAG build arg.
-BASE_TAG="sharelatex/sharelatex-base:${IMAGE_VERSION}-arm64"
-
+echo "==> Building base image $BASE_TAG"
+echo "    Context: $OVERLEAF_BUILD_DIR"
+echo "    File:    $DOCKERFILE_BASE"
 podman build \
-  --platform=linux/arm64 \
+  "${PODMAN_COMMON_ARGS[@]}" \
   --tag "$BASE_TAG" \
-  -f "$OVERLEAF_BUILD_DIR/server-ce/Dockerfile-base" \
+  -f "$DOCKERFILE_BASE" \
   "$OVERLEAF_BUILD_DIR"
 
-# BuildKit is the default in modern podman; --platform forces ARM64 even on
-# x86 hosts (with qemu) so the resulting image is portable.
+echo "==> Building community image $IMAGE_TAG"
+echo "    Context: $OVERLEAF_BUILD_DIR"
+echo "    File:    $DOCKERFILE_COMMUNITY"
 podman build \
-  --platform=linux/arm64 \
-  --tag "$IMAGE_TAG" \
-  --pull=newer \
+  "${PODMAN_COMMON_ARGS[@]}" \
   --build-arg "OVERLEAF_BASE_TAG=${BASE_TAG}" \
-  -f "$OVERLEAF_BUILD_DIR/server-ce/Dockerfile" \
+  --tag "$IMAGE_TAG" \
+  -f "$DOCKERFILE_COMMUNITY" \
   "$OVERLEAF_BUILD_DIR"
 
 #### Optional fulltex overlay ####
@@ -190,9 +186,17 @@ if [[ "$BUILD_FULL_TEXLIVE" == "true" ]]; then
     echo "    TEXLIVE_MIRROR_URL=$TEXLIVE_MIRROR_URL"
   fi
 
+  PODMAN_FULLTEX_BUILD_ARGS=(
+    --platform=linux/arm64
+    --tag "$FULLTEX_TAG"
+  )
+
+  if [[ "$BUILD_LOW_MEMORY" == "true" ]]; then
+    PODMAN_FULLTEX_BUILD_ARGS+=(--memory=4g)
+  fi
+
   podman build \
-    --platform=linux/arm64 \
-    --tag "$FULLTEX_TAG" \
+    "${PODMAN_FULLTEX_BUILD_ARGS[@]}" \
     "${FULLTEX_BUILD_ARGS[@]}" \
     -f "$FULLTEX_CONTAINERFILE" \
     "$FULLTEX_CONTEXT_DIR"
