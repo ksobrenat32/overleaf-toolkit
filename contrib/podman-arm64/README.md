@@ -22,7 +22,6 @@ contrib/podman-arm64/
 │   ├── install-quadlets.sh       # render + install quadlets into ~/.config/containers/systemd/
 │   └── status.sh                 # one-shot reporter (systemctl + podman ps)
 └── quadlets/
-    ├── overleaf.network
     ├── sharelatex-data.volume    # bind-mount of OVERLEAF_DATA_PATH
     ├── mongo-data.volume         # bind-mount of MONGO_DATA_PATH
     ├── redis-data.volume         # bind-mount of REDIS_DATA_PATH
@@ -202,10 +201,14 @@ systemctl --user restart overleaf-sharelatex.service
 - Container names match the toolkit defaults (`sharelatex`, `mongo`, `redis`)
   so the rc defaults (`MONGO_URL=mongodb://mongo/sharelatex`,
   `REDIS_HOST=redis`) work without edits.
-- All three containers live on a private `overleaf.network` and resolve each
-  other by container name via podman's built-in DNS.
-- The `sharelatex` service carries the same env vars the toolkit's compose
-  files inject via `lib/docker-compose.vars.yml`:
+- All three containers live on a private podman bridge network named `overleaf`
+  (created by `install-quadlets.sh` via `podman network create`) and resolve each
+  other by container name via podman's built-in DNS (aardvark-dns).
+- The `sharelatex` service has `Requires=` / `After=` on the mongo and redis
+  services, so starting `overleaf-sharelatex.service` pulls them in automatically
+  and waits for them to start before the sharelatex container is launched.
+- Mongo carries a healthcheck (`mongosh` / `mongo`) equivalent to the one in
+  `lib/docker-compose.mongo.yml`.
   - image ≥5: `OVERLEAF_MONGO_URL`, `OVERLEAF_REDIS_HOST`
   - image <5: `SHARELATEX_MONGO_URL`, `SHARELATEX_REDIS_HOST`
 - `EnvironmentFile=` points at `config/variables.env` so mail/LDAP/SAML
@@ -244,14 +247,13 @@ systemctl --user restart overleaf-sharelatex.service
 | ------------------------------------- | ---------------------------------------------------------------------- |
 | `bin/build-sharelatex-image.sh`       | Build `sharelatex/sharelatex:<ver>-arm64` from `github.com/overleaf/overleaf`; optionally also build the `-fulltex` overlay. |
 | `bin/pull-deps.sh`                    | Pull mongo + redis with `--platform=linux/arm64`.                      |
-| `bin/install-quadlets.sh`             | Render templates + drop quadlets in the systemd user dir; auto-detects the fulltex image. |
+| `bin/install-quadlets.sh`             | Render templates + drop quadlets in the systemd user dir; creates the `overleaf` podman network; auto-detects the fulltex image. |
 | `bin/status.sh`                       | Show service + container state.                                        |
 | `Containerfile.fulltex`               | Overlay that installs the full TeX Live distribution on top of the base ARM64 image. |
-| `quadlets/overleaf.network`           | Private network so the three containers can find each other.           |
 | `quadlets/*-data.volume`              | Bind-mount volumes for persistent data.                                |
 | `quadlets/mongo.container`            | Mongo 6+ with replica-set args + healthcheck.                          |
 | `quadlets/redis.container`            | Redis with `--appendonly yes` when `REDIS_AOF_PERSISTENCE=true`.       |
-| `quadlets/sharelatex.container`       | The Overleaf web service.                                              |
+| `quadlets/sharelatex.container`       | The Overleaf web service; pulls in mongo + redis via systemd Requires=/After=.
 
 
 ## Limitations vs. the toolkit's docker-compose path

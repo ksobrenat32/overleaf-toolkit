@@ -1,11 +1,13 @@
 [Unit]
 Description=Overleaf sharelatex (ARM64)
+Requires=overleaf-mongo.service overleaf-redis.service
+After=overleaf-mongo.service overleaf-redis.service
 
 [Container]
 Image=@OVERLEAF_IMAGE_TAG@
 ContainerName=sharelatex
 Volume=overleaf-sharelatex-data.volume:@IN_CONTAINER_DATA_PATH@:rw,U
-Network=overleaf.network
+Network=overleaf
 PublishPort=@PUBLISH_PORT_SPEC@
 Environment=GIT_BRIDGE_ENABLED=false
 Environment=GIT_BRIDGE_HOST=git-bridge

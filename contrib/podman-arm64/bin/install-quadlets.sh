@@ -43,6 +43,7 @@ fi
 
 read_image_version
 read_config
+read_mongo_version
 
 #### Resolve paths the same way the toolkit's bin/docker-compose does ####
 # (Inlined rather than calling canonicalize_data_paths from bin/docker-compose
@@ -148,6 +149,12 @@ esac
 #### Render templates ####
 mkdir -p "$QUADLET_DST_DIR"
 
+# Clean up stale quadlets from previous installs so removed templates don't
+# linger and cause conflicts (e.g. an old overleaf.network creating a
+# systemd-overleaf network instead of the plain 'overleaf' one we want).
+echo "==> Cleaning up old overleaf quadlets from $QUADLET_DST_DIR"
+find "$QUADLET_DST_DIR" -maxdepth 1 -name 'overleaf*' -print -delete
+
 echo "==> Rendering quadlets into $QUADLET_DST_DIR"
 for tmpl in "$QUADLET_SRC_DIR"/*; do
   fname=$(basename "$tmpl")
@@ -169,6 +176,7 @@ for tmpl in "$QUADLET_SRC_DIR"/*; do
     -e "s|@ENV_FILE@|$TOOLKIT_ROOT/config/variables.env|g" \
     -e "s|@MONGO_URL@|${MONGO_URL:-mongodb://mongo/sharelatex}|g" \
     -e "s|@REDIS_HOST@|${REDIS_HOST:-redis}|g" \
+    -e "s|@MONGOSH@|${MONGOSH:-mongosh}|g" \
     "$tmpl" > "$QUADLET_DST_DIR/$fname"
 done
 
@@ -179,6 +187,26 @@ if grep -R --include='*.container' --include='*.volume' --include='*.network' \
   grep -RHn --include='*.container' --include='*.volume' --include='*.network' \
       '@[A-Z_]\+@' "$QUADLET_DST_DIR" >&2
   exit 1
+fi
+
+#### Ensure the podman network exists ####
+# Creating it directly is more reliable than relying on the .network quadlet,
+# whose systemd-generator behaviour varies across podman versions.
+#
+# First, tear down the old systemd-managed network if it lingers from a
+# previous install that used a .network quadlet (it gets prefixed with
+# 'systemd-' by the podman generator).
+if podman network exists systemd-overleaf 2>/dev/null; then
+  echo "==> Removing stale systemd-overleaf network"
+  podman network rm systemd-overleaf
+fi
+
+# Create the network if it doesn't already exist.
+if podman network exists overleaf 2>/dev/null; then
+  echo "==> Network 'overleaf' already exists"
+else
+  echo "==> Creating podman network 'overleaf'"
+  podman network create overleaf
 fi
 
 #### Reload systemd ####
